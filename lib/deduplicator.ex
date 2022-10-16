@@ -20,10 +20,11 @@ defmodule Deduplicator do
     filename
     |> Deduplicator.Files.Reader.read()
     |> Enum.reduce_while({:ok, 0}, fn chunk, {:ok, line} ->
-      case handle_chunk(chunk, output_file, output_filename, line) do
-        :ok              -> {:cont, {:ok, line + 1}}
-        {:error, reason} -> {:halt, {:error, reason}}
-      end
+        if rem(line, 100) == 0, do: IO.puts("chunk #{line}")
+        case handle_chunk(chunk, output_file, output_filename, line) do
+          :ok              -> {:cont, {:ok, line + 1,}}
+          {:error, reason} -> {:halt, {:error, reason}}
+        end
     end)
     |> case do
       {:ok, _} ->

@@ -4,6 +4,7 @@ defmodule DeduplicatorTest do
   import Ecto.Query
 
   @test_dir "test/output"
+  @resources_dir "test/resources"
 
   setup_all do
     File.mkdir(@test_dir)
@@ -11,13 +12,9 @@ defmodule DeduplicatorTest do
     :ok
   end
 
-  setup tags do
+  setup do
     :ok = Ecto.Adapters.SQL.Sandbox.checkout(Deduplicator.Repo)
-
-    unless tags[:async] do
-      Ecto.Adapters.SQL.Sandbox.mode(Deduplicator.Repo, {:shared, self()})
-    end
-
+    Ecto.Adapters.SQL.Sandbox.mode(Deduplicator.Repo, {:shared, self()})
     :ok
   end
 
@@ -25,8 +22,8 @@ defmodule DeduplicatorTest do
 
   test "Read bytes from file" do
     [
-      "priv/text.txt",
-      "priv/pdf_example.pdf"
+      @resources_dir <> "/text.txt",
+      @resources_dir <> "/pdf_example.pdf"
     ]
     |> Enum.each(fn filename ->
       %{size: initial_size} = File.stat!(filename)
@@ -34,7 +31,7 @@ defmodule DeduplicatorTest do
       res = Deduplicator.Files.Reader.read(filename)
 
       res
-      |> Enum.each(&byte_size(&1) == @bytes)
+      |> Enum.each(&assert(byte_size(&1) <= @bytes))
 
       IO.puts("Chunk amount #{Enum.count(res)}")
 
@@ -50,7 +47,7 @@ defmodule DeduplicatorTest do
   describe "Calculate hash for chucks" do
     setup do
       chunks =
-        "./priv/text.txt"
+        @resources_dir <> "/text.txt"
         |> Deduplicator.Files.Reader.read(@bytes)
       {:ok, %{chunks: chunks}}
     end
@@ -66,46 +63,87 @@ defmodule DeduplicatorTest do
     end
   end
 
-  test "Generate filename" do
-    Deduplicator.Files.Writer.generate_filename()
-    |> IO.inspect()
-  end
-
   test "Read & save chunks" do
-    input_file = "priv/text.txt"
+    input_file = @resources_dir <> "/text.txt"
     print_file_size(input_file)
 
     {:ok, output_file} =
       input_file
-      |> Deduplicator.deduplicate_file("test/output")
+      |> Deduplicator.deduplicate_file(@test_dir)
 
-#    Deduplicator.Schemas.HashLinks
-#    |> where([h], h.refs_num > 1)
-#    |> Deduplicator.Repo.all
-#    |> IO.inspect(label: "Deduplicated hash")
+    chunk_repetition()
 
     print_file_size(output_file)
   end
 
-  test "Recover file" do
-    input_file = "priv/text.txt"
-#    input_file = "priv/pdf_example.pdf"
-    print_file_size(input_file)
+  describe "Recover file" do
+    test "txt" do
+      input_file = @resources_dir <> "/text.txt"
+      print_file_size(input_file)
 
-    {:ok, output_file} =
-      input_file
-      |> Deduplicator.deduplicate_file("test/output")
+      {:ok, output_file} =
+        input_file
+        |> Deduplicator.deduplicate_file(@test_dir)
 
-    print_file_size(output_file)
+      print_file_size(output_file)
 
-    recovered_file = "test/output/text.txt"
-#    recovered_file = "test/output/pdf_example.pdf"
-    {:ok, _} = Deduplicator.recovery_file(output_file, recovered_file)
-    print_file_size(recovered_file)
+      recovered_file = @test_dir <> "/text.txt"
+      {:ok, _} = Deduplicator.recovery_file(output_file, recovered_file)
+      print_file_size(recovered_file)
+    end
+
+    test "pdf" do
+      input_file = @resources_dir <> "/pdf_example.pdf"
+      print_file_size(input_file)
+
+      {:ok, output_file} =
+        input_file
+        |> Deduplicator.deduplicate_file(@test_dir)
+
+      print_file_size(output_file)
+
+      recovered_file = @test_dir <> "/pdf_example.pdf"
+      {:ok, _} = Deduplicator.recovery_file(output_file, recovered_file)
+      print_file_size(recovered_file)
+    end
+
+    @tag timeout: 400_000
+    test "jpg" do
+      input_file = @resources_dir <> "/IMG_0036.jpg"
+      print_file_size(input_file)
+
+      count =
+        input_file
+        |> Deduplicator.Files.Reader.read()
+        |> Enum.count()
+
+
+      IO.puts("Chunk amount #{count}")
+
+      {:ok, output_file} =
+        input_file
+        |> Deduplicator.deduplicate_file(@test_dir)
+
+      chunk_repetition()
+
+      print_file_size(output_file)
+
+      recovered_file = @test_dir <> "/IMG_0036.jpg"
+      {:ok, _} = Deduplicator.recovery_file(output_file, recovered_file)
+      print_file_size(recovered_file)
+    end
   end
 
   def print_file_size(filename) do
     %{size: size} = File.stat!(filename)
     IO.puts("File #{filename} size: #{size} bytes")
+  end
+
+  def chunk_repetition do
+    Deduplicator.Schemas.HashLinks
+    |> where([h], h.refs_num > 1)
+    |> select([h], h.refs_num)
+    |> Deduplicator.Repo.all()
+    |> IO.inspect(label: "Chunk repetition")
   end
 end
