@@ -15,9 +15,7 @@ end
 
 defmodule BitUtilsChunk do
   def chunks(binary, chunk_size) do
-#    IO.puts("Chunk Bytes: #{chunk_size}")
     hash_size = Deduplicator.Hash.hash_size(:sha)
-#    IO.puts("Hash Bytes: #{hash_size}")
     do_chunks(binary, {chunk_size, hash_size}, [])
   end
 

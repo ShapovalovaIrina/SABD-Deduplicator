@@ -13,4 +13,4 @@ config :deduplicator, Deduplicator.Repo,
 
 config :logger, :console, level: :info
 
-config :deduplicator, chuck_size_bytes: 512
+config :deduplicator, chuck_size_bytes: 64

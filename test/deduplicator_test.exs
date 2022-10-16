@@ -134,6 +134,88 @@ defmodule DeduplicatorTest do
     end
   end
 
+  describe "Performance" do
+    test "database with single insert" do
+      filename = @resources_dir <> "/pdf_example.pdf"
+      changesets =
+        Deduplicator.Files.Reader.read(filename)
+        |> Enum.map(fn chunk ->
+          hash = Deduplicator.Hash.binary_hash(chunk)
+          %{
+            hash: hash,
+            filename: filename,
+            line: 100
+          }
+          |> Deduplicator.Schemas.HashLinks.create_changeset()
+        end)
+
+      {time, _} = :timer.tc(fn ->
+        Enum.each(changesets, &Deduplicator.Repo.insert(&1, on_conflict: :nothing))
+      end)
+
+      IO.puts("Insert one by one take #{time / 1000} ms")
+    end
+
+    test "database with insert all" do
+      filename = @resources_dir <> "/pdf_example.pdf"
+      data =
+        Deduplicator.Files.Reader.read(filename)
+        |> Enum.map(fn chunk ->
+          hash = Deduplicator.Hash.binary_hash(chunk)
+          %{
+            hash: hash,
+            filename: filename,
+            line: 100
+          }
+        end)
+
+      {time, _} = :timer.tc(fn ->
+        Deduplicator.Repo.insert_all(Deduplicator.Schemas.HashLinks, data, on_conflict: :nothing)
+      end)
+
+      IO.puts("Insert all take #{time / 1000} ms")
+    end
+
+    test "file with single insert" do
+      filename = @resources_dir <> "/pdf_example.pdf"
+      output_file = @test_dir <> "/file_performance.txt"
+      :ok = File.touch(output_file)
+      {:ok, file} = File.open(output_file)
+
+      changesets =
+        Deduplicator.Files.Reader.read(filename)
+        |> Enum.map(fn chunk ->
+          Deduplicator.Hash.binary_hash(chunk)
+        end)
+
+      {time, _} = :timer.tc(fn ->
+        Enum.each(changesets, &IO.binwrite(file, &1))
+      end)
+
+      IO.puts("Write one by one take #{time / 1000} ms")
+    end
+
+    test "file with insert all" do
+      filename = @resources_dir <> "/pdf_example.pdf"
+      output_file = @test_dir <> "/file_performance.txt"
+      :ok = File.touch(output_file)
+      {:ok, file} = File.open(output_file)
+
+      data =
+        Deduplicator.Files.Reader.read(filename)
+        |> Enum.map(fn chunk ->
+          Deduplicator.Hash.binary_hash(chunk)
+        end)
+        |> Enum.join("")
+
+      {time, _} = :timer.tc(fn ->
+        IO.binwrite(file, data)
+      end)
+
+      IO.puts("Write all take #{time / 1000} ms")
+    end
+  end
+
   def print_file_size(filename) do
     %{size: size} = File.stat!(filename)
     IO.puts("File #{filename} size: #{size} bytes")
