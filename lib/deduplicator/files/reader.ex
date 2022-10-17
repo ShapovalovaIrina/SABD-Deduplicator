@@ -14,8 +14,8 @@ defmodule BitUtils do
 end
 
 defmodule BitUtilsChunk do
-  def chunks(binary, chunk_size) do
-    hash_size = Deduplicator.Hash.hash_size(:sha)
+  def chunks(binary, chunk_size, hash_type) do
+    hash_size = Deduplicator.Hash.hash_size(hash_type)
     do_chunks(binary, {chunk_size, hash_size}, [])
   end
 
@@ -42,23 +42,20 @@ defmodule Deduplicator.Files.Reader do
   Read data from file.
   """
 
-  def read_line(filename, bytes \\ nil) do
-    bytes = bytes || Application.get_env(:deduplicator, :chuck_size_bytes)
+  def read_chunks(filename, bytes, hash_type) do
     %{size: size} = File.stat!(filename)
 
-    read_binary_chunk(filename, size, bytes)
+    read_binary_chunk(filename, size, bytes, hash_type)
   end
 
-  def find_chunk(filename, line, bytes \\ nil) do
-    bytes = bytes || Application.get_env(:deduplicator, :chuck_size_bytes)
+  def find_chunk(filename, line, bytes, hash_type) do
     %{size: size} = File.stat!(filename)
 
-    read_binary_chunk(filename, size, bytes)
+    read_binary_chunk(filename, size, bytes, hash_type)
     |> Enum.fetch(line)
   end
 
-  def read(filename, bytes \\ nil, type \\ :binary) do
-    bytes = bytes || Application.get_env(:deduplicator, :chuck_size_bytes)
+  def read(filename, bytes, type \\ :binary) do
     %{size: size} = File.stat!(filename)
     IO.puts("File #{filename}: #{size} bytes")
 
@@ -76,11 +73,11 @@ defmodule Deduplicator.Files.Reader do
     end)
   end
 
-  def read_binary_chunk(filename, size, bytes) do
+  defp read_binary_chunk(filename, size, bytes, hash_type) do
     filename
     |> File.stream!([], size)
     |> Stream.flat_map(fn
-      binary -> BitUtilsChunk.chunks(binary, bytes)
+      binary -> BitUtilsChunk.chunks(binary, bytes, hash_type)
     end)
   end
 

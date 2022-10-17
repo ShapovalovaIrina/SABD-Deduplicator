@@ -3,12 +3,14 @@ defmodule DeduplicatorTest do
 
   import Ecto.Query
 
-  @test_dir "test/output"
+  @chunk_dir "test/chunks"
+  @recovery_dir "test/recovered"
   @resources_dir "test/resources"
 
   setup_all do
-    File.mkdir(@test_dir)
-#    on_exit(fn -> File.rm_rf!(@test_dir) end)
+    File.mkdir(@chunk_dir)
+    File.mkdir(@recovery_dir)
+    on_exit(fn -> File.rm_rf!(@chunk_dir) end)
     :ok
   end
 
@@ -28,7 +30,7 @@ defmodule DeduplicatorTest do
     |> Enum.each(fn filename ->
       %{size: initial_size} = File.stat!(filename)
 
-      res = Deduplicator.Files.Reader.read(filename)
+      res = Deduplicator.Files.Reader.read(filename, @bytes)
 
       res
       |> Enum.each(&assert(byte_size(&1) <= @bytes))
@@ -69,7 +71,7 @@ defmodule DeduplicatorTest do
 
     {:ok, output_file} =
       input_file
-      |> Deduplicator.deduplicate_file(@test_dir)
+      |> Deduplicator.deduplicate_file(output_filepath: @chunk_dir)
 
     chunk_repetition()
 
@@ -83,13 +85,15 @@ defmodule DeduplicatorTest do
 
       {:ok, output_file} =
         input_file
-        |> Deduplicator.deduplicate_file(@test_dir)
+        |> Deduplicator.deduplicate_file(output_filepath: @chunk_dir)
 
       print_file_size(output_file)
 
-      recovered_file = @test_dir <> "/text.txt"
+      recovered_file = @recovery_dir <> "/text.txt"
       {:ok, _} = Deduplicator.recovery_file(output_file, recovered_file)
       print_file_size(recovered_file)
+
+      assert_file_equals(input_file, recovered_file)
     end
 
     test "pdf" do
@@ -98,55 +102,71 @@ defmodule DeduplicatorTest do
 
       {:ok, output_file} =
         input_file
-        |> Deduplicator.deduplicate_file(@test_dir)
+        |> Deduplicator.deduplicate_file(output_filepath: @chunk_dir, bytes: 32)
 
       print_file_size(output_file)
 
-      recovered_file = @test_dir <> "/pdf_example.pdf"
+      chunk_repetition()
+
+      recovered_file = @recovery_dir <> "/pdf_example.pdf"
       {:ok, _} = Deduplicator.recovery_file(output_file, recovered_file)
       print_file_size(recovered_file)
+
+      assert_file_equals(input_file, recovered_file)
     end
 
+    @tag :skip
     @tag timeout: 400_000
     test "jpg" do
+      bytes = 20
       input_file = @resources_dir <> "/IMG_0036.jpg"
       print_file_size(input_file)
 
       count =
         input_file
-        |> Deduplicator.Files.Reader.read()
+        |> Deduplicator.Files.Reader.read(bytes)
         |> Enum.count()
-
 
       IO.puts("Chunk amount #{count}")
 
       {:ok, output_file} =
         input_file
-        |> Deduplicator.deduplicate_file(@test_dir)
+        |> Deduplicator.deduplicate_file(output_filepath: @chunk_dir, bytes: bytes, chunk_amount: 1000)
 
       chunk_repetition()
 
       print_file_size(output_file)
 
-      recovered_file = @test_dir <> "/IMG_0036.jpg"
+      recovered_file = @recovery_dir <> "/IMG_0036.jpg"
       {:ok, _} = Deduplicator.recovery_file(output_file, recovered_file)
       print_file_size(recovered_file)
+
+      assert_file_equals(input_file, recovered_file)
     end
   end
 
   describe "Performance" do
+    @performance_file "/pdf_example.pdf"
+    @performance_bytes 16
+
     test "database with single insert" do
-      filename = @resources_dir <> "/pdf_example.pdf"
+      filename = @resources_dir <> @performance_file
+      {:ok, %{id: file_id}} = Deduplicator.Hash.save_file(
+        filename,
+        @performance_bytes,
+        Deduplicator.Hash.default_algorithm()
+      )
+
       changesets =
-        Deduplicator.Files.Reader.read(filename)
+        Deduplicator.Files.Reader.read(filename, @performance_bytes)
         |> Enum.map(fn chunk ->
           hash = Deduplicator.Hash.binary_hash(chunk)
           %{
             hash: hash,
-            filename: filename,
+            file_id: file_id,
             line: 100
           }
-          |> Deduplicator.Schemas.HashLinks.create_changeset()
+          |> Deduplicator.Schemas.HashLink.create_changeset()
         end)
 
       {time, _} = :timer.tc(fn ->
@@ -157,33 +177,38 @@ defmodule DeduplicatorTest do
     end
 
     test "database with insert all" do
-      filename = @resources_dir <> "/pdf_example.pdf"
+      filename = @resources_dir <> @performance_file
+      {:ok, %{id: file_id}} = Deduplicator.Hash.save_file(
+        filename,
+        @performance_bytes,
+        Deduplicator.Hash.default_algorithm()
+      )
       data =
-        Deduplicator.Files.Reader.read(filename)
+        Deduplicator.Files.Reader.read(filename, @performance_bytes)
         |> Enum.map(fn chunk ->
           hash = Deduplicator.Hash.binary_hash(chunk)
           %{
             hash: hash,
-            filename: filename,
+            file_id: file_id,
             line: 100
           }
         end)
 
       {time, _} = :timer.tc(fn ->
-        Deduplicator.Repo.insert_all(Deduplicator.Schemas.HashLinks, data, on_conflict: :nothing)
+        Deduplicator.Repo.insert_all(Deduplicator.Schemas.HashLink, data, on_conflict: :nothing)
       end)
 
       IO.puts("Insert all take #{time / 1000} ms")
     end
 
     test "file with single insert" do
-      filename = @resources_dir <> "/pdf_example.pdf"
-      output_file = @test_dir <> "/file_performance.txt"
+      filename = @resources_dir <> @performance_file
+      output_file = @chunk_dir <> "/file_performance.txt"
       :ok = File.touch(output_file)
       {:ok, file} = File.open(output_file)
 
       changesets =
-        Deduplicator.Files.Reader.read(filename)
+        Deduplicator.Files.Reader.read(filename, @performance_bytes)
         |> Enum.map(fn chunk ->
           Deduplicator.Hash.binary_hash(chunk)
         end)
@@ -196,13 +221,13 @@ defmodule DeduplicatorTest do
     end
 
     test "file with insert all" do
-      filename = @resources_dir <> "/pdf_example.pdf"
-      output_file = @test_dir <> "/file_performance.txt"
+      filename = @resources_dir <> @performance_file
+      output_file = @chunk_dir <> "/file_performance.txt"
       :ok = File.touch(output_file)
       {:ok, file} = File.open(output_file)
 
       data =
-        Deduplicator.Files.Reader.read(filename)
+        Deduplicator.Files.Reader.read(filename, @performance_bytes)
         |> Enum.map(fn chunk ->
           Deduplicator.Hash.binary_hash(chunk)
         end)
@@ -221,8 +246,14 @@ defmodule DeduplicatorTest do
     IO.puts("File #{filename} size: #{size} bytes")
   end
 
+  def assert_file_equals(file1, file2) do
+    res1 = Deduplicator.Files.Reader.read(file1, 512) |> Enum.to_list()
+    res2 = Deduplicator.Files.Reader.read(file2, 512) |> Enum.to_list()
+    assert res1 == res2
+  end
+
   def chunk_repetition do
-    Deduplicator.Schemas.HashLinks
+    Deduplicator.Schemas.HashLink
     |> where([h], h.refs_num > 1)
     |> select([h], h.refs_num)
     |> Deduplicator.Repo.all()
