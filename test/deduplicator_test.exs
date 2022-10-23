@@ -30,7 +30,7 @@ defmodule DeduplicatorTest do
     |> Enum.each(fn filename ->
       %{size: initial_size} = File.stat!(filename)
 
-      res = Deduplicator.Files.Reader.read(filename, @bytes)
+      res = Deduplicator.Files.read(filename, @bytes)
 
       res
       |> Enum.each(&assert(byte_size(&1) <= @bytes))
@@ -50,7 +50,7 @@ defmodule DeduplicatorTest do
     setup do
       chunks =
         @resources_dir <> "/text.txt"
-        |> Deduplicator.Files.Reader.read(@bytes)
+        |> Deduplicator.Files.read(@bytes)
       {:ok, %{chunks: chunks}}
     end
 
@@ -124,7 +124,7 @@ defmodule DeduplicatorTest do
 
       count =
         input_file
-        |> Deduplicator.Files.Reader.read(bytes)
+        |> Deduplicator.Files.read(bytes)
         |> Enum.count()
 
       IO.puts("Chunk amount #{count}")
@@ -151,14 +151,14 @@ defmodule DeduplicatorTest do
 
     test "database with single insert" do
       filename = @resources_dir <> @performance_file
-      {:ok, %{id: file_id}} = Deduplicator.Hash.save_file(
+      {:ok, %{id: file_id}} = Deduplicator.Files.save_file(
         filename,
         @performance_bytes,
         Deduplicator.Hash.default_algorithm()
       )
 
       changesets =
-        Deduplicator.Files.Reader.read(filename, @performance_bytes)
+        Deduplicator.Files.read(filename, @performance_bytes)
         |> Enum.map(fn chunk ->
           hash = Deduplicator.Hash.binary_hash(chunk)
           %{
@@ -178,13 +178,13 @@ defmodule DeduplicatorTest do
 
     test "database with insert all" do
       filename = @resources_dir <> @performance_file
-      {:ok, %{id: file_id}} = Deduplicator.Hash.save_file(
+      {:ok, %{id: file_id}} = Deduplicator.Files.save_file(
         filename,
         @performance_bytes,
         Deduplicator.Hash.default_algorithm()
       )
       data =
-        Deduplicator.Files.Reader.read(filename, @performance_bytes)
+        Deduplicator.Files.read(filename, @performance_bytes)
         |> Enum.map(fn chunk ->
           hash = Deduplicator.Hash.binary_hash(chunk)
           %{
@@ -208,7 +208,7 @@ defmodule DeduplicatorTest do
       {:ok, file} = File.open(output_file)
 
       changesets =
-        Deduplicator.Files.Reader.read(filename, @performance_bytes)
+        Deduplicator.Files.read(filename, @performance_bytes)
         |> Enum.map(fn chunk ->
           Deduplicator.Hash.binary_hash(chunk)
         end)
@@ -227,7 +227,7 @@ defmodule DeduplicatorTest do
       {:ok, file} = File.open(output_file)
 
       data =
-        Deduplicator.Files.Reader.read(filename, @performance_bytes)
+        Deduplicator.Files.read(filename, @performance_bytes)
         |> Enum.map(fn chunk ->
           Deduplicator.Hash.binary_hash(chunk)
         end)
@@ -247,8 +247,8 @@ defmodule DeduplicatorTest do
   end
 
   def assert_file_equals(file1, file2) do
-    res1 = Deduplicator.Files.Reader.read(file1, 512) |> Enum.to_list()
-    res2 = Deduplicator.Files.Reader.read(file2, 512) |> Enum.to_list()
+    res1 = Deduplicator.Files.read(file1, 512) |> Enum.to_list()
+    res2 = Deduplicator.Files.read(file2, 512) |> Enum.to_list()
     assert res1 == res2
   end
 

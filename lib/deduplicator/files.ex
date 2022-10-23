@@ -27,20 +27,40 @@ defmodule BitUtilsChunk do
   end
   defp do_chunks(<<"0", _::bitstring>> = binary, {chunk_size, _} = n, acc) do
     <<"0", chunk::binary-size(chunk_size), rest::bitstring>> = binary
-#    IO.inspect(rest, binaries: :as_binaries, limit: 8, label: "chunk rest")
+    #    IO.inspect(rest, binaries: :as_binaries, limit: 8, label: "chunk rest")
     do_chunks(rest, n, [<<"0", chunk::binary-size(chunk_size)>> | acc])
   end
   defp do_chunks(<<"1", _::bitstring>> = binary, {_, hash_size} = n, acc) do
     <<"1", chunk::binary-size(hash_size), rest::bitstring>> = binary
-#    IO.inspect(rest, binaries: :as_binaries, limit: 8, label: "chunk rest")
+    #    IO.inspect(rest, binaries: :as_binaries, limit: 8, label: "chunk rest")
     do_chunks(rest, n, [<<"1", chunk::binary-size(hash_size)>> | acc])
   end
 end
 
-defmodule Deduplicator.Files.Reader do
+defmodule Deduplicator.Files do
   @moduledoc """
-  Read data from file.
+  Files logic.
   """
+
+  alias Deduplicator.Repo
+  alias Deduplicator.Schemas.File, as: StoredFile
+
+  # DATABASE
+
+  def save_file(filename, bytes, algorithm) do
+    StoredFile.create_changeset(filename, bytes, Atom.to_string(algorithm))
+    |> Repo.insert()
+  end
+
+  def get_input_file(filename) do
+    Repo.get_by(StoredFile, filename: filename)
+    |> wrap_search()
+  end
+
+  def wrap_search(nil), do: {:error, :not_found}
+  def wrap_search(res), do: {:ok, res}
+
+  # FILES
 
   def read_chunks(filename, bytes, hash_type) do
     %{size: size} = File.stat!(filename)

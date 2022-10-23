@@ -6,8 +6,6 @@ defmodule Deduplicator do
   alias Deduplicator.Hash
   require Logger
 
-  import Deduplicator.Files.Writer, only: [generate_filename: 0]
-
   @doc """
   Read data from input file.
   Deduplicate data chunks by hash calculating.
@@ -28,7 +26,7 @@ defmodule Deduplicator do
     output_filename = output_filepath <> "/" <> generate_filename()
     :ok = File.touch(output_filename)
     {:ok, output_file} = File.open(output_filename, [:append, :write])
-    {:ok, %{id: file_id}} = Deduplicator.Hash.save_file(output_filename, bytes, algorithm)
+    {:ok, %{id: file_id}} = Deduplicator.Files.save_file(output_filename, bytes, algorithm)
 
     state = %{
       line: 0,
@@ -42,7 +40,7 @@ defmodule Deduplicator do
     }
 
     input_filename
-    |> Deduplicator.Files.Reader.read(bytes)
+    |> Deduplicator.Files.read(bytes)
     |> Enum.reduce_while(state, &handle_chunks/2)
     |> save_hash_list_from_state()
     |> case do
@@ -142,10 +140,10 @@ defmodule Deduplicator do
   def recovery_file(input_filename, output_filename) do
     :ok = File.touch(output_filename)
     {:ok, output_file} = File.open(output_filename, [:write])
-    {:ok, %{bytes: bytes, algorithm: algorithm}} = Hash.get_input_file(input_filename)
+    {:ok, %{bytes: bytes, algorithm: algorithm}} = Deduplicator.Files.get_input_file(input_filename)
     
     input_filename
-    |> Deduplicator.Files.Reader.read_chunks(bytes, String.to_existing_atom(algorithm))
+    |> Deduplicator.Files.read_chunks(bytes, String.to_existing_atom(algorithm))
     |> Enum.reduce_while(:ok, fn chunk, :ok ->
       with {:ok, chunk} <- recovery_chunk(chunk),
            :ok          <- IO.binwrite(output_file, chunk) do
@@ -189,10 +187,19 @@ defmodule Deduplicator do
   end
 
   defp get_chunk_from_file(filename, line, bytes, algorithm) do
-    case Deduplicator.Files.Reader.find_chunk(filename, line, bytes, algorithm) do
+    case Deduplicator.Files.find_chunk(filename, line, bytes, algorithm) do
       {:ok, @chunk_identifier <> chunk} -> {:ok, chunk}
       {:ok, @hash_identifier <> _hash} -> {:error, :not_chunk}
       {:error, reason} ->{:error, reason}
     end
+  end
+
+  defp generate_filename do
+    now =
+      :os.system_time(:millisecond)
+      |> Integer.to_string
+
+    :crypto.hash(:md5, now)
+    |> Base.encode16()
   end
 end

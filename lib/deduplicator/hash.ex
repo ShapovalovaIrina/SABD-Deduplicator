@@ -71,7 +71,6 @@ defmodule Deduplicator.Hash do
 
   def update_all_hash_links([]), do: :ok
   def update_all_hash_links(links) do
-    # TODO: dynamic refs num
     links =
       links
       |> Enum.group_by(& &1)
@@ -92,16 +91,6 @@ defmodule Deduplicator.Hash do
            {:error, reason} -> {:halt, {:error, reason}}
       end
     end)
-  end
-
-  def save_file(filename, bytes, algorithm) do
-    File.create_changeset(filename, bytes, Atom.to_string(algorithm))
-    |> Repo.insert()
-  end
-
-  def get_input_file(filename) do
-    Repo.get_by(File, filename: filename)
-    |> wrap_search()
   end
 
   def wrap_search(nil), do: {:error, :not_found}
