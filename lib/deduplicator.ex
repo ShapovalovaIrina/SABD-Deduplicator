@@ -3,6 +3,9 @@ defmodule Deduplicator do
   Deduplication logic.
   """
 
+  @chunk_identifier Deduplicator.BinaryUtils.chunk_identifier()
+  @hash_identifier Deduplicator.BinaryUtils.hash_identifier()
+
   alias Deduplicator.Hash
   require Logger
 
@@ -165,9 +168,6 @@ defmodule Deduplicator do
        end
   end
 
-  # 0 and 1 to indicate chunk and hash
-  @chunk_identifier "0"
-  @hash_identifier "1"
   defp get_hash_str(chunk, nil),
        do: @chunk_identifier <> chunk
   defp get_hash_str(_chunk, %{hash: hash} = _hash_link),
