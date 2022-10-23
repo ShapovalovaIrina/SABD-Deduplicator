@@ -26,3 +26,4 @@ deduplicator-*.tar
 /tmp/
 
 test/output*
+test/recovered*

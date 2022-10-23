@@ -4,7 +4,7 @@ import Config
 config :deduplicator, Deduplicator.Repo,
   username: "postgres",
   password: "postgres",
-  database: "deduplicatortests",
+  database: "deduplicator_tests",
   hostname: "localhost",
   port: 5432,
   pool_size: 10,
@@ -13,4 +13,4 @@ config :deduplicator, Deduplicator.Repo,
 
 config :logger, :console, level: :info
 
-config :deduplicator, chuck_size_bytes: 64
+config :deduplicator, chuck_size_bytes: 8
