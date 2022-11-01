@@ -21,9 +21,10 @@ defmodule Deduplicator do
   """
   def deduplicate_file(input_filename, opts \\ []) do
     output_filepath = Keyword.get(opts, :output_filepath, "")
-    chunk_amount = Keyword.get(opts, :chunk_amount, 100)
-    bytes = Keyword.get(opts, :bytes, Application.get_env(:deduplicator, :chuck_size_bytes))
-    algorithm = opts |> Keyword.get(:hash_algorimth) |> Hash.get_algorithm()
+    chunk_amount    = Keyword.get(opts, :chunk_amount, 100)
+    bytes           = Keyword.get(opts, :bytes, Application.get_env(:deduplicator, :chuck_size_bytes))
+    algorithm       = Keyword.get(opts, :hash_algorimth) |> Hash.get_algorithm()
+    compress?       = Keyword.get(opts, :compress, true)
 
     # TODO: handle errors
     output_filename = output_filepath <> "/" <> generate_filename()
@@ -42,20 +43,24 @@ defmodule Deduplicator do
       file: output_file
     }
 
+    with {:ok, _} <- split_file_and_handle_chunks(input_filename, state, bytes),
+         :ok <- File.close(output_file),
+         {:ok, compressed_filename} <- Deduplicator.Files.compress_file(output_filename, compress?),
+         :ok <- Deduplicator.Files.remove_file(output_filename, compress?) do
+      {:ok, compressed_filename}
+    else
+      {:error, reason} ->
+        Logger.error("Deduplicate file error #{inspect(reason)}")
+        :ok = File.close(output_file)
+        {:error, reason}
+    end
+  end
+
+  defp split_file_and_handle_chunks(input_filename, state, bytes) do
     input_filename
     |> Deduplicator.Files.read(bytes)
     |> Enum.reduce_while(state, &handle_chunks/2)
     |> save_hash_list_from_state()
-    |> case do
-         {:ok, _} ->
-           :ok = File.close(output_file)
-           {:ok, output_filename}
-
-         {:error, reason} ->
-           Logger.error("Deduplicate file error #{inspect(reason)}")
-           :ok = File.close(output_file)
-           {:error, reason}
-    end
   end
 
   defp handle_chunks(chunk, %{
@@ -66,7 +71,8 @@ defmodule Deduplicator do
     {:cont, add_chuck_to_state(chunk, state)}
   end
   defp handle_chunks(chunk, %{line: line} = state) do
-    IO.puts("line #{line}, time #{inspect(:erlang.localtime())}")
+    Logger.debug("line #{line}, time #{inspect(:erlang.localtime())}")
+
     add_chuck_to_state(chunk, state)
     |> save_hash_list_from_state()
     |> case do
@@ -140,11 +146,32 @@ defmodule Deduplicator do
   @doc """
   Recovery file from deduplicated file.
   """
-  def recovery_file(input_filename, output_filename) do
-    :ok = File.touch(output_filename)
-    {:ok, output_file} = File.open(output_filename, [:write])
-    {:ok, %{bytes: bytes, algorithm: algorithm}} = Deduplicator.Files.get_input_file(input_filename)
-    
+  def recovery_file(input_filename, output_filename, opts \\ []) do
+    compress? = Keyword.get(opts, :compress, true)
+
+    # TODO: handle errors
+    with {:ok, input_filename} <-
+           Deduplicator.Files.unzip_file(input_filename, compress?),
+         :ok <-
+           Deduplicator.Files.remove_file(output_filename, compress?),
+         {:ok, %{bytes: bytes, algorithm: algorithm}} <-
+           Deduplicator.Files.get_input_file(input_filename),
+         :ok <-
+           File.touch(output_filename),
+         {:ok, output_file} <-
+           File.open(output_filename, [:write]),
+         :ok <-
+           read_and_recovery_chunk(input_filename, output_file, bytes, algorithm),
+         :ok <- File.close(output_file) do
+      {:ok, output_filename}
+    else
+      {:error, reason} ->
+        Logger.error("Recovery file error #{inspect(reason)}")
+        {:error, reason}
+    end
+  end
+
+  defp read_and_recovery_chunk(input_filename, output_file, bytes, algorithm) do
     input_filename
     |> Deduplicator.Files.read_chunks(bytes, String.to_existing_atom(algorithm))
     |> Enum.reduce_while(:ok, fn chunk, :ok ->
@@ -155,17 +182,6 @@ defmodule Deduplicator do
         {:error, reason} -> {:halt, {:error, reason}}
       end
     end)
-    |> case do
-         :ok ->
-           :ok = File.close(output_file)
-           {:ok, output_filename}
-
-         {:error, reason} ->
-           Logger.error("Recovery file error #{inspect(reason)}")
-           :ok = File.close(output_file)
-           File.rm!(output_filename)
-           {:error, reason}
-       end
   end
 
   defp get_hash_str(chunk, nil),

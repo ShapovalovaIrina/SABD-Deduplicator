@@ -7,6 +7,8 @@ defmodule Deduplicator.Files do
   alias Deduplicator.Schemas.File, as: StoredFile
 
   alias Deduplicator.BinaryUtils
+
+  require Logger
   
   # DATABASE
 
@@ -42,7 +44,7 @@ defmodule Deduplicator.Files do
 
   def read(filename, bytes) do
     %{size: size} = File.stat!(filename)
-    IO.puts("File #{filename}: #{size} bytes")
+    Logger.info("File #{filename}: #{size} bytes")
 
     read_binary(filename, size, bytes)
   end
@@ -55,7 +57,39 @@ defmodule Deduplicator.Files do
 
   defp read_chunked_binary(filename, size, bytes, hash_type) do
     filename
-    |> File.stream!([], size)
+    |> File.stream!([:compressed], size)
     |> Stream.flat_map(&BinaryUtils.read_chunked_file(&1, bytes, hash_type))
+  end
+
+  def compress_file(filename, false = _compress?) do
+    {:ok, filename}
+  end
+  def compress_file(filename, true = _compress?) do
+    :zip.create(
+      String.to_charlist(filename <> ".zip"),
+      [String.to_charlist(filename)]
+    )
+    |> case do
+         {:ok, filename}  -> {:ok, List.to_string(filename)}
+         {:error, reason} -> {:error, reason}
+    end
+  end
+
+  def unzip_file(filename, false = _compress?) do
+    {:ok, filename}
+  end
+  def unzip_file(filename, true = _compress?) do
+    :zip.unzip(
+      String.to_charlist(filename)
+    )
+    |> case do
+         {:ok, filename}  -> {:ok, List.to_string(filename)}
+         {:error, reason} -> {:error, reason}
+       end
+  end
+
+  def remove_file(_filename, false = _remove?), do: :ok
+  def remove_file(filename, true = _remove?) do
+    File.rm(filename)
   end
 end
