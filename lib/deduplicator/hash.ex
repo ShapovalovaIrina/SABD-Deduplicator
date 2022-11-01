@@ -3,7 +3,7 @@ defmodule Deduplicator.Hash do
   Hash related logic.
   """
   alias Deduplicator.Repo
-  alias Deduplicator.Schemas.{HashLink, File}
+  alias Deduplicator.Schemas.HashLink
 
   import Ecto.Query
 
