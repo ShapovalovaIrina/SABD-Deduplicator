@@ -149,19 +149,18 @@ defmodule Deduplicator do
   def recovery_file(input_filename, output_filename, opts \\ []) do
     compress? = Keyword.get(opts, :compress, true)
 
-    # TODO: handle errors
-    with {:ok, input_filename} <-
+    with {:ok, input_filename_unzip} <-
            Deduplicator.Files.unzip_file(input_filename, compress?),
          :ok <-
-           Deduplicator.Files.remove_file(output_filename, compress?),
+           Deduplicator.Files.remove_file(input_filename, compress?),
          {:ok, %{bytes: bytes, algorithm: algorithm}} <-
-           Deduplicator.Files.get_input_file(input_filename),
+           Deduplicator.Files.get_input_file(input_filename_unzip),
          :ok <-
            File.touch(output_filename),
          {:ok, output_file} <-
            File.open(output_filename, [:write]),
          :ok <-
-           read_and_recovery_chunk(input_filename, output_file, bytes, algorithm),
+           read_and_recovery_chunk(input_filename_unzip, output_file, bytes, algorithm),
          :ok <- File.close(output_file) do
       {:ok, output_filename}
     else
