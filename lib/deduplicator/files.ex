@@ -44,7 +44,7 @@ defmodule Deduplicator.Files do
 
   def read(filename, bytes) do
     %{size: size} = File.stat!(filename)
-    Logger.info("File #{filename}: #{size} bytes")
+    Logger.debug("File #{filename}: #{size} bytes")
 
     read_binary(filename, size, bytes)
   end

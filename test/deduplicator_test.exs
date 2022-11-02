@@ -65,17 +65,32 @@ defmodule DeduplicatorTest do
     end
   end
 
-  test "Read & save chunks" do
-    input_file = @resources_dir <> "/text.txt"
-    print_file_size(input_file)
+  describe "Read & save chunks" do
+    test "txt" do
+      input_file = @resources_dir <> "/text.txt"
+      print_file_size(input_file)
 
-    {:ok, output_file} =
-      input_file
-      |> Deduplicator.deduplicate_file(output_filepath: @chunk_dir)
+      {:ok, output_file} =
+        input_file
+        |> Deduplicator.deduplicate_file(output_filepath: @chunk_dir)
 
-    chunk_repetition()
+      chunk_repetition()
 
-    print_file_size(output_file)
+      print_file_size(output_file)
+    end
+
+    test "pdf" do
+      input_file = @resources_dir <> "/pdf_example.pdf"
+      print_file_size(input_file)
+
+      {:ok, output_file} =
+        input_file
+        |> Deduplicator.deduplicate_file(output_filepath: @chunk_dir, bytes: 32, chunk_amount: 1000)
+
+      chunk_repetition()
+
+      print_file_size(output_file)
+    end
   end
 
   describe "Recover file" do
@@ -256,6 +271,7 @@ defmodule DeduplicatorTest do
     Deduplicator.Schemas.HashLink
     |> where([h], h.refs_num > 1)
     |> select([h], h.refs_num)
+    |> order_by([h], desc: h.refs_num)
     |> Deduplicator.Repo.all()
     |> IO.inspect(label: "Chunk repetition")
   end
