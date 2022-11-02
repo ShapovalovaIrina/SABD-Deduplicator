@@ -111,6 +111,32 @@ defmodule DeduplicatorTest do
       assert_file_equals(input_file, recovered_file)
     end
 
+    @timeout :infinity
+    test "txt with manual duplication" do
+      bytes = 64
+      input_file = @resources_dir <> "/text_64_byte_duplicated.txt"
+      print_file_size(input_file)
+
+      count =
+        input_file
+        |> Deduplicator.Files.read(bytes)
+        |> Enum.count()
+
+      IO.puts("Chunk amount #{count}")
+
+      {:ok, output_file} =
+        input_file
+        |> Deduplicator.deduplicate_file(output_filepath: @chunk_dir, bytes: bytes, chunk_amount: 1000)
+
+      print_file_size(output_file)
+
+      recovered_file = @recovery_dir <> "/text_64_byte_duplicated.txt"
+      {:ok, _} = Deduplicator.recovery_file(output_file, recovered_file)
+      print_file_size(recovered_file)
+
+      assert_file_equals(input_file, recovered_file)
+    end
+
     test "pdf" do
       input_file = @resources_dir <> "/pdf_example.pdf"
       print_file_size(input_file)
@@ -153,6 +179,33 @@ defmodule DeduplicatorTest do
       print_file_size(output_file)
 
       recovered_file = @recovery_dir <> "/IMG_0036.jpg"
+      {:ok, _} = Deduplicator.recovery_file(output_file, recovered_file)
+      print_file_size(recovered_file)
+
+      assert_file_equals(input_file, recovered_file)
+    end
+
+    @tag timeout: :infinity
+    test "MOV" do
+      bytes = 128
+      input_file = @resources_dir <> "/IMG_0781.MOV"
+      print_file_size(input_file)
+
+      count =
+        input_file
+        |> Deduplicator.Files.read(bytes)
+        |> Enum.count()
+
+      IO.puts("Chunk amount #{count}")
+
+      {:ok, output_file} =
+        input_file|> Deduplicator.deduplicate_file(output_filepath: @chunk_dir, bytes: bytes, chunk_amount: 2000)
+
+      chunk_repetition()
+
+      print_file_size(output_file)
+
+      recovered_file = @recovery_dir <> "/IMG_0781.MOV"
       {:ok, _} = Deduplicator.recovery_file(output_file, recovered_file)
       print_file_size(recovered_file)
 

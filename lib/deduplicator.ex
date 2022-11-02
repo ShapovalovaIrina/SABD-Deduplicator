@@ -71,7 +71,7 @@ defmodule Deduplicator do
     {:cont, add_chuck_to_state(chunk, state)}
   end
   defp handle_chunks(chunk, %{line: line} = state) do
-    Logger.debug("line #{line}, time #{inspect(:erlang.localtime())}")
+    Logger.info("chunk #{line}, time #{inspect(:erlang.localtime())}")
 
     add_chuck_to_state(chunk, state)
     |> save_hash_list_from_state()
