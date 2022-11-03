@@ -114,6 +114,13 @@ defmodule Deduplicator.Hash do
     |> Repo.all()
   end
 
+  def get_duplicated_lines_for_file(file_id) do
+    HashLink
+    |> where([h], h.refs_num > 1 and h.file_id == ^file_id)
+    |> select([h], h.line)
+    |> Repo.all()
+  end
+
   def wrap_search(nil), do: {:error, :not_found}
   def wrap_search(res), do: {:ok, res}
 end
