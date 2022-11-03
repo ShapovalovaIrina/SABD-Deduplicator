@@ -34,9 +34,7 @@ defmodule Deduplicator do
 
     state = %{
       line: 0,
-      binary: "",
-      insert_list: [],
-      update_list: [],
+      list: [],
       chunk_amount: chunk_amount,
       algorithm: algorithm,
       file_id: file_id,
@@ -64,10 +62,9 @@ defmodule Deduplicator do
   end
 
   defp handle_chunks(chunk, %{
-    insert_list: insert_list,
-    update_list: update_list,
+    list: list,
     chunk_amount: chunk_amount
-  } = state) when length(insert_list) + length(update_list) < chunk_amount do
+  } = state) when length(list) < chunk_amount do
     {:cont, add_chuck_to_state(chunk, state)}
   end
   defp handle_chunks(chunk, %{line: line} = state) do
@@ -80,67 +77,76 @@ defmodule Deduplicator do
          {:error, reason} -> {:halt, {:error, reason}}
     end
   end
-  
-  defp add_chuck_to_state(chunk, %{line: line, binary: binary, insert_list: list, algorithm: algorithm} = state) do
+
+  defp add_chuck_to_state(chunk, %{line: line, list: list, algorithm: algorithm} = state) do
     hash = Hash.binary_hash(chunk, algorithm)
 
-    hash_link =
-      with {:error, :not_found} <- Hash.get_hash_link(hash) do
-        Enum.find(list, & &1.hash == hash)
-      else
-        {:ok, hash_link} -> hash_link
-      end
-
     state
-    |> add_hash_link_to_state_list(hash_link, hash)
     |> Map.merge(%{
       line: line + 1,
-      binary: binary <> get_hash_str(chunk, hash_link)
+      list: [%{chunk: chunk, hash: hash, line: line} | list]
     })
   end
 
-  defp add_hash_link_to_state_list(
-         %{insert_list: list, line: line} = state,
-         nil = _hash_link,
-         hash
-       ) do
-    entity = %{
-      hash: hash,
-      line: line
-    }
-    %{state | insert_list: [entity | list]}
-  end
-  defp add_hash_link_to_state_list(
-         %{update_list: list} = state,
-         %{hash: hash} = _hash_link,
-         _
-       ) do
-    %{state | update_list: [hash | list]}
-  end
-  
   defp save_hash_list_from_state(%{
-    binary: binary,
-    insert_list: insert_list,
-    update_list: update_list,
+    list: list,
     file_id: file_id,
     file: file
   } = state) do
-    insert_list = Enum.map(insert_list, &Map.put(&1, :file_id, file_id))
+    list =
+      list
+      |> Enum.reverse()
+      |> Enum.map(&Map.put(&1, :file_id, file_id))
 
-    with :ok <- Hash.insert_all_hash_links(insert_list),
-         :ok <- Hash.update_all_hash_links(update_list),
+    with {:ok, insert_list, update_list} <- Hash.save_all_hash_links(list),
+         binary = binary_from_list(list, insert_list, update_list),
          :ok <- IO.binwrite(file, binary) do
-      state = %{state |
-        binary: "",
-        insert_list: [],
-        update_list: [],
-      }
-      {:ok, state}
+      {:ok, %{state |list: []}}
     else
       error ->
         Logger.error("Handle chunk error: #{inspect(error)}")
         {:error, error}
     end
+  end
+
+  defp binary_from_list(list, inserted, updated) do
+    state = %{
+      binary: "",
+      inserted: inserted,
+      updated: updated
+    }
+
+    list
+    |> Enum.reduce(state, fn %{chunk: chunk, hash: hash}, state ->
+      case Enum.find_index(state.inserted, & &1.hash == hash) do
+        nil ->
+          binary_from_list_updated(state, chunk, hash)
+
+        index ->
+          binary_from_list_inserted(state, chunk, index)
+      end
+    end)
+    |> Map.get(:binary)
+  end
+
+  defp binary_from_list_updated(state, chunk, hash) do
+    %{} = hash_link = Enum.find(state.updated, & &1.hash == hash)
+    binary = state.binary <> get_hash_str(chunk, hash_link)
+
+    %{state | binary: binary}
+  end
+
+  defp binary_from_list_inserted(state, chunk, index) do
+    binary = state.binary <> get_hash_str(chunk, nil)
+
+    updated = [Enum.at(state.inserted, index) | state.updated]
+    inserted = Enum.drop(state.inserted, index)
+
+    %{
+      binary: binary,
+      inserted: inserted,
+      updated: updated
+    }
   end
 
   @doc """
@@ -184,10 +190,13 @@ defmodule Deduplicator do
   end
 
   @hash_size Deduplicator.BinaryUtils.hash_size()
-  defp get_hash_str(chunk, nil),
-       do: @chunk_identifier <> chunk
-  defp get_hash_str(_chunk, %{line: line} = _hash_link),
-       do: @hash_identifier <> String.pad_leading("#{line}", @hash_size, "0")
+  @padding " "
+  defp get_hash_str(chunk, nil) do
+    @chunk_identifier <> chunk
+  end
+  defp get_hash_str(_chunk, %{line: line} = _hash_link) do
+    @hash_identifier <> String.pad_leading("#{line}", @hash_size, @padding)
+  end
       
       
   def recovery_chunk(@chunk_identifier <> chunk) do
@@ -196,7 +205,7 @@ defmodule Deduplicator do
   def recovery_chunk(@hash_identifier <> line) do
     line =
       line
-      |> String.trim_leading("0")
+      |> String.trim_leading(@padding)
       |> String.to_integer()
     case Hash.get_hash_link_by_line(line, preload_file: true) do
       {:ok, %{file: %{filename: filename, bytes: bytes}, line: line}} ->

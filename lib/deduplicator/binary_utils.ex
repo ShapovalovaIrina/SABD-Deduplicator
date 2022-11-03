@@ -4,7 +4,7 @@ defmodule Deduplicator.BinaryUtils do
   @chunk_identifier "0"
   @hash_identifier "1"
 
-  @hash_size 4
+  @hash_size 6
 
   def chunk_identifier, do: @chunk_identifier
   def hash_identifier, do: @hash_identifier

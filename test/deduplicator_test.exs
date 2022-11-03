@@ -91,6 +91,27 @@ defmodule DeduplicatorTest do
 
       print_file_size(output_file)
     end
+
+    @tag :skip
+    test "MOV" do
+      bytes = 64
+      input_file = @resources_dir <> "/IMG_0781.MOV"
+      print_file_size(input_file)
+
+      count =
+        input_file
+        |> Deduplicator.Files.read(bytes)
+        |> Enum.count()
+
+      IO.puts("Chunk amount #{count}")
+
+      {:ok, output_file} =
+        input_file|> Deduplicator.deduplicate_file(output_filepath: @chunk_dir, bytes: bytes, chunk_amount: 5000)
+
+      chunk_repetition()
+
+      print_file_size(output_file)
+    end
   end
 
   describe "Recover file" do
@@ -111,7 +132,7 @@ defmodule DeduplicatorTest do
       assert_file_equals(input_file, recovered_file)
     end
 
-    @timeout :infinity
+    @tag timeout: :infinity
     test "txt with manual duplication" do
       bytes = 64
       input_file = @resources_dir <> "/text_64_byte_duplicated.txt"
@@ -133,6 +154,8 @@ defmodule DeduplicatorTest do
       recovered_file = @recovery_dir <> "/text_64_byte_duplicated.txt"
       {:ok, _} = Deduplicator.recovery_file(output_file, recovered_file)
       print_file_size(recovered_file)
+
+      chunk_repetition()
 
       assert_file_equals(input_file, recovered_file)
     end
@@ -185,6 +208,7 @@ defmodule DeduplicatorTest do
       assert_file_equals(input_file, recovered_file)
     end
 
+    @tag :skip
     @tag timeout: :infinity
     test "MOV" do
       bytes = 128
