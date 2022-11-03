@@ -35,6 +35,15 @@ defmodule Deduplicator.Hash do
     |> wrap_search()
   end
 
+  def get_hash_link_by_line(line, opts \\ []) do
+    preload_file? = Keyword.get(opts, :preload_file, false)
+
+    HashLink
+    |> Repo.get_by(line: line)
+    |> preload_file(preload_file?)
+    |> wrap_search()
+  end
+
   defp preload_file(hash, true  = _preload?), do: Repo.preload(hash, :file)
   defp preload_file(hash, false = _preload?), do: hash
 

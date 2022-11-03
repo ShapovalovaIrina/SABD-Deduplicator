@@ -24,10 +24,10 @@ defmodule Deduplicator do
     chunk_amount    = Keyword.get(opts, :chunk_amount, 100)
     bytes           = Keyword.get(opts, :bytes, Application.get_env(:deduplicator, :chuck_size_bytes))
     algorithm       = Keyword.get(opts, :hash_algorimth) |> Hash.get_algorithm()
-    compress?       = Keyword.get(opts, :compress, true)
+    compress?       = Keyword.get(opts, :compress, false)
 
     # TODO: handle errors
-    output_filename = output_filepath <> "/" <> generate_filename()
+    output_filename = output_filepath <> "/" <> generate_filename() <> ".bin"
     :ok = File.touch(output_filename)
     {:ok, output_file} = File.open(output_filename, [:append, :write])
     {:ok, %{id: file_id}} = Deduplicator.Files.save_file(output_filename, bytes, algorithm)
@@ -147,20 +147,20 @@ defmodule Deduplicator do
   Recovery file from deduplicated file.
   """
   def recovery_file(input_filename, output_filename, opts \\ []) do
-    compress? = Keyword.get(opts, :compress, true)
+    compress? = Keyword.get(opts, :compress, false)
 
     with {:ok, input_filename_unzip} <-
            Deduplicator.Files.unzip_file(input_filename, compress?),
          :ok <-
            Deduplicator.Files.remove_file(input_filename, compress?),
-         {:ok, %{bytes: bytes, algorithm: algorithm}} <-
+         {:ok, %{bytes: bytes}} <-
            Deduplicator.Files.get_input_file(input_filename_unzip),
          :ok <-
            File.touch(output_filename),
          {:ok, output_file} <-
            File.open(output_filename, [:write]),
          :ok <-
-           read_and_recovery_chunk(input_filename_unzip, output_file, bytes, algorithm),
+           read_and_recovery_chunk(input_filename_unzip, output_file, bytes),
          :ok <- File.close(output_file) do
       {:ok, output_filename}
     else
@@ -170,9 +170,9 @@ defmodule Deduplicator do
     end
   end
 
-  defp read_and_recovery_chunk(input_filename, output_file, bytes, algorithm) do
+  defp read_and_recovery_chunk(input_filename, output_file, bytes) do
     input_filename
-    |> Deduplicator.Files.read_chunks(bytes, String.to_existing_atom(algorithm))
+    |> Deduplicator.Files.read_chunks(bytes)
     |> Enum.reduce_while(:ok, fn chunk, :ok ->
       with {:ok, chunk} <- recovery_chunk(chunk),
            :ok          <- IO.binwrite(output_file, chunk) do
@@ -183,26 +183,31 @@ defmodule Deduplicator do
     end)
   end
 
+  @hash_size Deduplicator.BinaryUtils.hash_size()
   defp get_hash_str(chunk, nil),
        do: @chunk_identifier <> chunk
-  defp get_hash_str(_chunk, %{hash: hash} = _hash_link),
-      do: @hash_identifier <> hash
+  defp get_hash_str(_chunk, %{line: line} = _hash_link),
+       do: @hash_identifier <> String.pad_leading("#{line}", @hash_size, "0")
       
       
   def recovery_chunk(@chunk_identifier <> chunk) do
     {:ok, chunk}
   end
-  def recovery_chunk(@hash_identifier <> hash) do
-    case Hash.get_hash_link(hash, preload_file: true) do
-      {:ok, %{file: %{filename: filename, bytes: bytes, algorithm: algorithm}, line: line}} ->
-        get_chunk_from_file(filename, line, bytes, String.to_existing_atom(algorithm))
+  def recovery_chunk(@hash_identifier <> line) do
+    line =
+      line
+      |> String.trim_leading("0")
+      |> String.to_integer()
+    case Hash.get_hash_link_by_line(line, preload_file: true) do
+      {:ok, %{file: %{filename: filename, bytes: bytes}, line: line}} ->
+        get_chunk_from_file(filename, line, bytes)
       {:error, reason} ->
         {:error, reason}
     end
   end
 
-  defp get_chunk_from_file(filename, line, bytes, algorithm) do
-    case Deduplicator.Files.find_chunk(filename, line, bytes, algorithm) do
+  defp get_chunk_from_file(filename, line, bytes) do
+    case Deduplicator.Files.find_chunk(filename, line, bytes) do
       {:ok, @chunk_identifier <> chunk} -> {:ok, chunk}
       {:ok, @hash_identifier <> _hash} -> {:error, :not_chunk}
       {:error, reason} ->{:error, reason}

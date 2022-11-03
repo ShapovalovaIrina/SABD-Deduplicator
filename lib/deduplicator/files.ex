@@ -27,18 +27,18 @@ defmodule Deduplicator.Files do
 
   # FILES
 
-  def read_chunks(filename, bytes, hash_type) do
+  def read_chunks(filename, bytes) do
     %{size: size} = File.stat!(filename)
 
     filename
-    |> read_chunked_binary(size, bytes, hash_type)
+    |> read_chunked_binary(size, bytes)
   end
 
-  def find_chunk(filename, line, bytes, hash_type) do
+  def find_chunk(filename, line, bytes) do
     %{size: size} = File.stat!(filename)
 
     filename
-    |> read_chunked_binary(size, bytes, hash_type)
+    |> read_chunked_binary(size, bytes)
     |> Enum.fetch(line)
   end
 
@@ -55,10 +55,10 @@ defmodule Deduplicator.Files do
     |> Stream.flat_map(&BinaryUtils.split_binary_into_chunks(&1, bytes))
   end
 
-  defp read_chunked_binary(filename, size, bytes, hash_type) do
+  defp read_chunked_binary(filename, size, bytes) do
     filename
     |> File.stream!([:compressed], size)
-    |> Stream.flat_map(&BinaryUtils.read_chunked_file(&1, bytes, hash_type))
+    |> Stream.flat_map(&BinaryUtils.read_chunked_file(&1, bytes))
   end
 
   def compress_file(filename, false = _compress?) do
