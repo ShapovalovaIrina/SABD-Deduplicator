@@ -27,3 +27,5 @@ deduplicator-*.tar
 
 test/output*
 test/recovered*
+
+/test/resources/IMG_0781.MOV
